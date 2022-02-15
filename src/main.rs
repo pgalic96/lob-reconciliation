@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::time::{Duration, Instant};
+use std::time::Instant;
 use tungstenite::{connect, Message};
 use url::Url;
 
@@ -9,14 +9,14 @@ mod order_book;
 pub use crate::order_book::operations;
 
 const SUBSCRIBE_MSG: &str = r#"
-{
-    "jsonrpc" : "2.0",
-    "method" : "public/subscribe",
-    "params" : {
-        "channels": ["book.BTC-PERPETUAL.100ms"]
-    }
-}
-"#;
+        {
+            "jsonrpc" : "2.0",
+            "method" : "public/subscribe",
+            "params" : {
+                "channels": ["book.BTC-PERPETUAL.100ms"]
+            }
+        }
+    "#;
 
 const UNSUBSCRIBE_MSG: &str = r#"
         {
@@ -27,7 +27,6 @@ const UNSUBSCRIBE_MSG: &str = r#"
             }
         }
     "#;
-
 
 #[derive(Debug, Deserialize, Serialize)]
 struct LOBUpdateMessage {
@@ -71,62 +70,30 @@ fn main() {
     let mut bid_order_book: HashMap<String, f64> = HashMap::new();
     let mut ask_order_book: HashMap<String, f64> = HashMap::new();
     let mut start = Instant::now();
-
+    let mut duration = start.elapsed();
     loop {
-        let duration = start.elapsed();
-        if duration >= Duration::new(1, 0) {
-            if max_bid != 0.0 {
-                let amount = bid_order_book.get(&max_bid.to_string());
-                match amount {
-                    None => panic!("There cannot be a price with empty amount"),
-                    Some(i) => {
-                        println!("Best Bid: {}, Amount: {:?}", max_bid, *i as i64);
-                    }
-                }
-            }
-            if min_ask != f64::MAX {
-                let amount = ask_order_book.get(&min_ask.to_string());
-                match amount {
-                    None => panic!("There cannot be a price with empty amount"),
-                    Some(i) => {
-                        println!("Best Ask: {}, Amount: {:?}", min_ask, *i as i64);
-                        println!("-------------------");
-                    }
-                }
-            }
+        if duration.as_secs() >= 1 {
+            output_best_orders(&bid_order_book, &ask_order_book, max_bid, min_ask);
             start = Instant::now();
         }
         let msg = socket.read_message().expect("Error reading message");
         match msg {
             Message::Text(_) => {
-                let msg = match msg.to_text() {
-                    Ok(val) => val,
-                    Err(_) => continue,
-                };
+                let msg = msg.to_text().expect("Error converting message to text");
                 let msg: LOBUpdateMessage = serde_json::from_str(msg).unwrap();
                 match msg.params.data.message_type {
                     MessageTypeEnum::Snapshot => {
-                        if msg.params.data.bids.len() != 0 {
-                            let result = operations::init_asks(
-                                &mut bid_order_book,
-                                msg.params.data.bids,
-                            );
-                            max_bid = result;
-                        }
-                        if msg.params.data.asks.len() != 0 {
-                            let result = operations::init_asks(
-                                &mut ask_order_book,
-                                msg.params.data.asks,
-                            );
-                            min_ask = result;
-                        }
-                        previous_change_id = msg.params.data.change_id;
+                        let result =
+                            process_snapshot(msg, &mut bid_order_book, &mut ask_order_book);
+                        max_bid = result.0;
+                        min_ask = result.1;
+                        previous_change_id = result.2;
                     }
                     MessageTypeEnum::Change => {
                         if previous_change_id != msg.params.data.prev_change_id {
                             println!("Packet loss -- reconnecting....");
-                            bid_order_book = HashMap::new();
-                            ask_order_book = HashMap::new();
+                            bid_order_book.clear();
+                            ask_order_book.clear();
                             socket
                                 .write_message(Message::Text(UNSUBSCRIBE_MSG.into()))
                                 .unwrap();
@@ -137,32 +104,91 @@ fn main() {
                             socket.read_message().expect("Error reading message");
                             continue;
                         }
-                        previous_change_id = msg.params.data.change_id;
-                        if msg.params.data.bids.len() != 0 {
-                            let result = operations::update_bids(
-                                &mut bid_order_book,
-                                msg.params.data.bids,
-                                max_bid,
-                            );
-                            if max_bid != result {
-                                max_bid = result
-                            }
+                        let result = process_change(
+                            msg,
+                            &mut bid_order_book,
+                            &mut ask_order_book,
+                            max_bid,
+                            min_ask,
+                        );
+                        if max_bid != result.0 {
+                            max_bid = result.0;
                         }
-                        if msg.params.data.asks.len() != 0 {
-                            let result = operations::update_asks(
-                                &mut ask_order_book,
-                                msg.params.data.asks,
-                                min_ask,
-                            );
-                            if min_ask != result {
-                                min_ask = result
-                            }
+                        if min_ask != result.1 {
+                            min_ask = result.1;
                         }
+                        previous_change_id = result.2;
                     }
                 }
             }
             _ => {
                 panic!("Non-text message data received. Aborting.");
+            }
+        }
+        duration = start.elapsed();
+    }
+}
+
+fn process_snapshot(
+    msg: LOBUpdateMessage,
+    bid_order_book: &mut HashMap<String, f64>,
+    ask_order_book: &mut HashMap<String, f64>,
+) -> (f64, f64, u64) {
+    let mut max_bid: f64 = 0.0;
+    let mut min_ask: f64 = f64::MAX;
+    if !msg.params.data.bids.is_empty() {
+        max_bid = operations::init_asks(bid_order_book, msg.params.data.bids);
+    }
+    if !msg.params.data.asks.is_empty() {
+        min_ask = operations::init_asks(ask_order_book, msg.params.data.asks);
+    }
+    (max_bid, min_ask, msg.params.data.change_id)
+}
+
+fn process_change(
+    msg: LOBUpdateMessage,
+    bid_order_book: &mut HashMap<String, f64>,
+    ask_order_book: &mut HashMap<String, f64>,
+    mut max_bid: f64,
+    mut min_ask: f64,
+) -> (f64, f64, u64) {
+    if !msg.params.data.bids.is_empty() {
+        let result = operations::update_bids(bid_order_book, msg.params.data.bids, max_bid);
+        if max_bid != result {
+            max_bid = result
+        }
+    }
+    if !msg.params.data.asks.is_empty() {
+        let result = operations::update_asks(ask_order_book, msg.params.data.asks, min_ask);
+        if min_ask != result {
+            min_ask = result
+        }
+    }
+    (max_bid, min_ask, msg.params.data.change_id)
+}
+
+fn output_best_orders(
+    bid_order_book: &HashMap<String, f64>,
+    ask_order_book: &HashMap<String, f64>,
+    max_bid: f64,
+    min_ask: f64,
+) {
+    if max_bid != 0.0 {
+        let amount = bid_order_book.get(&max_bid.to_string());
+        match amount {
+            None => panic!("There cannot be a price with empty amount"),
+            Some(i) => {
+                println!("Best Bid: {}, Amount: {:?}", max_bid, *i as i64);
+            }
+        }
+    }
+    if min_ask != f64::MAX {
+        let amount = ask_order_book.get(&min_ask.to_string());
+        match amount {
+            None => panic!("There cannot be a price with empty amount"),
+            Some(i) => {
+                println!("Best Ask: {}, Amount: {:?}", min_ask, *i as i64);
+                println!("-------------------");
             }
         }
     }

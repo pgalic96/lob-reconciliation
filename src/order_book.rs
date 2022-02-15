@@ -22,7 +22,7 @@ pub mod operations {
         bids: Vec<PriceUpdate>,
         max_bid: f64,
     ) -> f64 {
-        let mut max_bid: f64 = max_bid;
+        let mut max_bid = max_bid;
         for bid in &bids {
             match bid.update_type {
                 UpdateTypeEnum::Change => {
@@ -37,7 +37,7 @@ pub mod operations {
                 UpdateTypeEnum::Delete => {
                     bid_order_book.remove(&bid.price.to_string());
                     if bid.price == max_bid {
-                        max_bid = compute_max_bid(&bid_order_book);
+                        max_bid = compute_max_bid(bid_order_book);
                     }
                 }
             }
@@ -50,7 +50,7 @@ pub mod operations {
         asks: Vec<PriceUpdate>,
         min_ask: f64,
     ) -> f64 {
-        let mut min_ask: f64 = min_ask;
+        let mut min_ask = min_ask;
         for ask in &asks {
             match ask.update_type {
                 UpdateTypeEnum::Change => {
@@ -65,7 +65,7 @@ pub mod operations {
                 UpdateTypeEnum::Delete => {
                     ask_order_book.remove(&ask.price.to_string());
                     if ask.price == min_ask {
-                        min_ask = compute_min_ask(&ask_order_book);
+                        min_ask = compute_min_ask(ask_order_book);
                     }
                 }
             }
@@ -74,7 +74,7 @@ pub mod operations {
     }
 
     pub fn init_bids(bid_order_book: &mut HashMap<String, f64>, bids: Vec<PriceUpdate>) -> f64 {
-        let mut max_bid: f64 = 0.0;
+        let mut max_bid = 0.0;
         for bid in &bids {
             if bid.price > max_bid {
                 max_bid = bid.price;
@@ -84,11 +84,8 @@ pub mod operations {
         max_bid
     }
 
-    pub fn init_asks(
-        ask_order_book: &mut HashMap<String, f64>,
-        asks: Vec<PriceUpdate>,
-    ) -> f64 {
-        let mut min_ask: f64 = f64::MAX;
+    pub fn init_asks(ask_order_book: &mut HashMap<String, f64>, asks: Vec<PriceUpdate>) -> f64 {
+        let mut min_ask = f64::MAX;
         for ask in &asks {
             if ask.price < min_ask {
                 min_ask = ask.price;
