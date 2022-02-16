@@ -31,8 +31,8 @@ pub mod operations {
                 UpdateTypeEnum::New => {
                     if bid.price > max_bid {
                         max_bid = bid.price;
-                        bid_order_book.insert(bid.price.to_string(), bid.amount);
                     }
+                    bid_order_book.insert(bid.price.to_string(), bid.amount);
                 }
                 UpdateTypeEnum::Delete => {
                     bid_order_book.remove(&bid.price.to_string());
@@ -59,8 +59,8 @@ pub mod operations {
                 UpdateTypeEnum::New => {
                     if ask.price < min_ask {
                         min_ask = ask.price;
-                        ask_order_book.insert(ask.price.to_string(), ask.amount);
                     }
+                    ask_order_book.insert(ask.price.to_string(), ask.amount);
                 }
                 UpdateTypeEnum::Delete => {
                     ask_order_book.remove(&ask.price.to_string());

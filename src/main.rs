@@ -5,6 +5,7 @@ use tungstenite::{connect, Message};
 use url::Url;
 
 mod order_book;
+mod test;
 
 pub use crate::order_book::operations;
 
@@ -29,7 +30,7 @@ const UNSUBSCRIBE_MSG: &str = r#"
     "#;
 
 #[derive(Debug, Deserialize, Serialize)]
-struct LOBUpdateMessage {
+pub struct LOBUpdateMessage {
     params: Data,
 }
 
@@ -137,7 +138,7 @@ fn process_snapshot(
     let mut max_bid: f64 = 0.0;
     let mut min_ask: f64 = f64::MAX;
     if !msg.params.data.bids.is_empty() {
-        max_bid = operations::init_asks(bid_order_book, msg.params.data.bids);
+        max_bid = operations::init_bids(bid_order_book, msg.params.data.bids);
     }
     if !msg.params.data.asks.is_empty() {
         min_ask = operations::init_asks(ask_order_book, msg.params.data.asks);
@@ -181,6 +182,8 @@ fn output_best_orders(
                 println!("Best Bid: {}, Amount: {:?}", max_bid, *i as i64);
             }
         }
+    } else {
+        println!("No Bids");
     }
     if min_ask != f64::MAX {
         let amount = ask_order_book.get(&min_ask.to_string());
@@ -188,8 +191,10 @@ fn output_best_orders(
             None => panic!("There cannot be a price with empty amount"),
             Some(i) => {
                 println!("Best Ask: {}, Amount: {:?}", min_ask, *i as i64);
-                println!("-------------------");
             }
         }
+    } else {
+        println!("No Asks")
     }
+    println!("-------------------");
 }
